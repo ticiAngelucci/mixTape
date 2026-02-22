@@ -126,6 +126,8 @@ function MixTapeGenerator({ accessToken, profile, onRecordCreated }) {
   const [isSaving, setIsSaving] = useState(false)
   const [queueProgress, setQueueProgress] = useState({ completed: 0, total: 0, percent: 0 })
   const [isQueueModeModalOpen, setIsQueueModeModalOpen] = useState(false)
+  const [draggedTrackId, setDraggedTrackId] = useState(null)
+  const [dropTargetTrackId, setDropTargetTrackId] = useState(null)
   const [error, setError] = useState('')
   const [info, setInfo] = useState('')
 
@@ -230,7 +232,7 @@ function MixTapeGenerator({ accessToken, profile, onRecordCreated }) {
         setQueueProgress({ completed: uris.length, total: uris.length, percent: 100 })
         const name = `mixTape Radio - ${selectedArtists.map((artist) => artist.name).join(' + ')}`
         persistRecord({ name, type: 'radio', spotifyPlaylistId: null })
-        alert('mixTape en reproduccion. Se reemplazo la cola anterior.')
+        alert('mixTape en reproduccion. Spotify no permite vaciar cola por API; se reemplazo la reproduccion actual.')
         return
       }
 
@@ -315,6 +317,26 @@ function MixTapeGenerator({ accessToken, profile, onRecordCreated }) {
     setInfo('')
   }
 
+  const reorderTrack = (sourceTrackId, targetTrackId) => {
+    if (!sourceTrackId || !targetTrackId || sourceTrackId === targetTrackId) {
+      return
+    }
+
+    setGeneratedTracks((current) => {
+      const sourceIndex = current.findIndex((track) => track.id === sourceTrackId)
+      const targetIndex = current.findIndex((track) => track.id === targetTrackId)
+
+      if (sourceIndex < 0 || targetIndex < 0) {
+        return current
+      }
+
+      const next = [...current]
+      const [moved] = next.splice(sourceIndex, 1)
+      next.splice(targetIndex, 0, moved)
+      return next
+    })
+  }
+
   return (
     <section className="space-y-4 rounded-2xl border border-zinc-800 bg-zinc-900/70 p-4">
       <div>
@@ -324,9 +346,38 @@ function MixTapeGenerator({ accessToken, profile, onRecordCreated }) {
 
       {hasMixTape ? (
         <>
+          <p className="rounded-lg border border-zinc-800 bg-zinc-950/60 px-3 py-2 text-xs text-zinc-400">
+            Orden personalizado: arrastra y suelta canciones para reordenarlas. Este orden se respeta al escuchar o guardar.
+          </p>
           <ul className="space-y-2">
-            {generatedTracks.map((track) => (
-              <li key={track.id} className="flex items-center gap-3 rounded-xl border border-zinc-800 bg-zinc-950/70 p-3">
+            {generatedTracks.map((track, index) => (
+              <li
+                key={track.id}
+                draggable={!isSaving}
+                onDragStart={() => setDraggedTrackId(track.id)}
+                onDragOver={(event) => {
+                  event.preventDefault()
+                  if (!isSaving) {
+                    setDropTargetTrackId(track.id)
+                  }
+                }}
+                onDrop={(event) => {
+                  event.preventDefault()
+                  if (!isSaving) {
+                    reorderTrack(draggedTrackId, track.id)
+                  }
+                  setDraggedTrackId(null)
+                  setDropTargetTrackId(null)
+                }}
+                onDragEnd={() => {
+                  setDraggedTrackId(null)
+                  setDropTargetTrackId(null)
+                }}
+                className={`flex cursor-grab items-center gap-3 rounded-xl border bg-zinc-950/70 p-3 ${
+                  dropTargetTrackId === track.id ? 'border-emerald-400' : 'border-zinc-800'
+                } ${draggedTrackId === track.id ? 'opacity-60' : ''}`}
+              >
+                <div className="w-7 shrink-0 text-center text-xs font-semibold text-zinc-400">{index + 1}</div>
                 <img
                   src={track.album.images?.[2]?.url || track.album.images?.[1]?.url || track.album.images?.[0]?.url || ''}
                   alt={track.album.name}
@@ -336,6 +387,7 @@ function MixTapeGenerator({ accessToken, profile, onRecordCreated }) {
                   <p className="truncate text-sm font-semibold text-zinc-100">{track.name}</p>
                   <p className="truncate text-xs text-zinc-400">{track.artists.map((artist) => artist.name).join(', ')}</p>
                 </div>
+                <span className="shrink-0 text-xs text-zinc-500">Arrastrar</span>
               </li>
             ))}
           </ul>
@@ -409,6 +461,7 @@ function MixTapeGenerator({ accessToken, profile, onRecordCreated }) {
           <div className="w-full max-w-md rounded-2xl border border-zinc-700 bg-zinc-900 p-5 shadow-2xl">
             <h3 className="text-lg font-bold text-zinc-100">Como queres escuchar este mixTape?</h3>
             <p className="mt-2 text-sm text-zinc-300">Elegi una opcion de reproduccion.</p>
+            <p className="mt-1 text-xs text-zinc-400">Nota: Spotify no permite borrar la cola existente via API.</p>
 
             <div className="mt-5 grid gap-2">
               <button
@@ -416,7 +469,7 @@ function MixTapeGenerator({ accessToken, profile, onRecordCreated }) {
                 onClick={() => handleListenNow('replace')}
                 className="inline-flex items-center justify-center rounded-xl bg-emerald-500 px-4 py-2.5 text-sm font-semibold text-black transition hover:bg-emerald-400"
               >
-                Escuchar ahora y reemplazar cola
+                Escuchar ahora (reemplazar reproduccion)
               </button>
               <button
                 type="button"
