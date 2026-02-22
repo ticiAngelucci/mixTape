@@ -48,6 +48,7 @@ def login():
     scopes = " ".join(
         [
             "user-top-read",
+            "user-modify-playback-state",
             "playlist-modify-public",
             "playlist-modify-private",
         ]

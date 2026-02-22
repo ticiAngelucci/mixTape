@@ -1,15 +1,13 @@
-import { useEffect, useMemo, useState } from 'react'
-import ArtistSelector from './components/ArtistSelector'
-import GenerateButton from './components/GenerateButton'
+import { useEffect, useState } from 'react'
+import Dashboard from './components/Dashboard'
 import LoginCard from './components/LoginCard'
-import SearchBar from './components/SearchBar'
-import SelectedArtists from './components/SelectedArtists'
-import SuccessCard from './components/SuccessCard'
+import MixTapeGenerator from './components/MixTapeGenerator'
 
 const SPOTIFY_CLIENT_ID = import.meta.env.VITE_SPOTIFY_CLIENT_ID || ''
-const SPOTIFY_REDIRECT_URI = import.meta.env.VITE_SPOTIFY_REDIRECT_URI 
+const SPOTIFY_REDIRECT_URI = import.meta.env.VITE_SPOTIFY_REDIRECT_URI || 'http://127.0.0.1:5173/callback'
 const SPOTIFY_SCOPES = [
   'user-read-email',
+  'user-modify-playback-state',
   'playlist-modify-public',
   'playlist-modify-private',
 ]
@@ -18,19 +16,6 @@ const TOKEN_STORAGE_KEY = 'mixtape_spotify_access_token'
 const TOKEN_EXPIRES_AT_STORAGE_KEY = 'mixtape_spotify_access_token_expires_at'
 const CODE_VERIFIER_STORAGE_KEY = 'mixtape_spotify_code_verifier'
 const STATE_STORAGE_KEY = 'mixtape_spotify_oauth_state'
-
-const MOCK_ARTISTS = [
-  { id: '1', name: 'Daft Punk', image: 'https://images.unsplash.com/photo-1614613535308-eb5fbd847f5f?auto=format&fit=crop&w=200&q=80' },
-  { id: '2', name: 'Rosalia', image: 'https://images.unsplash.com/photo-1516280440614-37939bbacd81?auto=format&fit=crop&w=200&q=80' },
-  { id: '3', name: 'Arctic Monkeys', image: 'https://images.unsplash.com/photo-1501386761578-eac5c94b800a?auto=format&fit=crop&w=200&q=80' },
-  { id: '4', name: 'Tame Impala', image: 'https://images.unsplash.com/photo-1470225620780-dba8ba36b745?auto=format&fit=crop&w=200&q=80' },
-  { id: '5', name: 'Billie Eilish', image: 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?auto=format&fit=crop&w=200&q=80' },
-  { id: '6', name: 'The Weeknd', image: 'https://images.unsplash.com/photo-1501612780327-45045538702b?auto=format&fit=crop&w=200&q=80' },
-  { id: '7', name: 'Bad Bunny', image: 'https://images.unsplash.com/photo-1445985543470-41fba5c3144a?auto=format&fit=crop&w=200&q=80' },
-  { id: '8', name: 'Lana Del Rey', image: 'https://images.unsplash.com/photo-1511379938547-c1f69419868d?auto=format&fit=crop&w=200&q=80' },
-]
-
-const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
 function generateRandomString(length) {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
@@ -105,9 +90,7 @@ async function exchangeCodeForToken(code) {
 
   const response = await fetch('https://accounts.spotify.com/api/token', {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/x-www-form-urlencoded',
-    },
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body,
   })
 
@@ -121,9 +104,7 @@ async function exchangeCodeForToken(code) {
 
 async function fetchSpotifyProfile(accessToken) {
   const response = await fetch('https://api.spotify.com/v1/me', {
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-    },
+    headers: { Authorization: `Bearer ${accessToken}` },
   })
 
   const payload = await response.json().catch(() => ({}))
@@ -134,48 +115,31 @@ async function fetchSpotifyProfile(accessToken) {
   return payload
 }
 
-async function mockSearchArtists(query) {
-  await delay(500)
-  if (!query.trim()) {
-    return []
-  }
-
-  return MOCK_ARTISTS.filter((artist) => artist.name.toLowerCase().includes(query.toLowerCase()))
-}
-
-async function mockGeneratePlaylist(artists) {
-  await delay(1600)
-  const names = artists.map((artist) => artist.name).join(' & ')
-
-  return {
-    name: `mixTape: ${names}`,
-    url: 'https://open.spotify.com/',
-  }
-}
-
 function App() {
   const [token, setToken] = useState(() => getStoredToken())
   const [profile, setProfile] = useState(null)
   const [authError, setAuthError] = useState('')
   const [isAuthLoading, setIsAuthLoading] = useState(false)
-
-  const [query, setQuery] = useState('')
-  const [searchResults, setSearchResults] = useState([])
-  const [selectedArtists, setSelectedArtists] = useState([])
-  const [isSearching, setIsSearching] = useState(false)
-  const [isGenerating, setIsGenerating] = useState(false)
-  const [playlist, setPlaylist] = useState(null)
-
-  const selectedIds = useMemo(() => new Set(selectedArtists.map((artist) => artist.id)), [selectedArtists])
+  const [activeTab, setActiveTab] = useState('generator')
+  const [dashboardRefreshToken, setDashboardRefreshToken] = useState(0)
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
     const code = params.get('code')
     const state = params.get('state')
+    const directToken = params.get('token')
     const oauthError = params.get('error')
 
     if (oauthError) {
       setAuthError('Spotify rechazo el login. Revisa permisos y Redirect URI.')
+      window.history.replaceState({}, document.title, window.location.pathname)
+      return
+    }
+
+    if (directToken) {
+      localStorage.setItem(TOKEN_STORAGE_KEY, directToken)
+      localStorage.setItem(TOKEN_EXPIRES_AT_STORAGE_KEY, String(Date.now() + 3600 * 1000))
+      setToken(directToken)
       window.history.replaceState({}, document.title, window.location.pathname)
       return
     }
@@ -271,45 +235,8 @@ function App() {
     setAuthError('')
   }
 
-  const handleQueryChange = async (value) => {
-    setQuery(value)
-    setPlaylist(null)
-
-    if (!value.trim()) {
-      setSearchResults([])
-      return
-    }
-
-    setIsSearching(true)
-    const results = await mockSearchArtists(value)
-    setSearchResults(results)
-    setIsSearching(false)
-  }
-
-  const handleSelectArtist = (artist) => {
-    setPlaylist(null)
-
-    if (selectedIds.has(artist.id)) {
-      return
-    }
-
-    setSelectedArtists((current) => [...current, artist])
-  }
-
-  const handleRemoveArtist = (artistId) => {
-    setPlaylist(null)
-    setSelectedArtists((current) => current.filter((artist) => artist.id !== artistId))
-  }
-
-  const handleGenerate = async () => {
-    if (selectedArtists.length < 2) {
-      return
-    }
-
-    setIsGenerating(true)
-    const createdPlaylist = await mockGeneratePlaylist(selectedArtists)
-    setPlaylist(createdPlaylist)
-    setIsGenerating(false)
+  const handleRecordCreated = () => {
+    setDashboardRefreshToken((current) => current + 1)
   }
 
   if (!token || !profile) {
@@ -326,13 +253,13 @@ function App() {
 
   return (
     <main className="min-h-screen bg-zinc-950 px-4 py-8 text-zinc-100 sm:px-6 lg:px-8">
-      <div className="mx-auto w-full max-w-5xl space-y-4">
+      <div className="mx-auto w-full max-w-6xl space-y-4">
         <header className="rounded-2xl border border-zinc-800 bg-zinc-900/60 p-5">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
-              <p className="text-xs uppercase tracking-widest text-emerald-400">Spotify Playlist Builder</p>
-              <h1 className="mt-2 text-3xl font-black tracking-tight">mixTape <span aria-hidden="true">📼</span></h1>
-              <p className="mt-2 text-sm text-zinc-300">Buscá artistas, seleccioná al menos dos y generá tu playlist al instante.</p>
+              <p className="text-xs uppercase tracking-widest text-emerald-400">mixTape</p>
+              <h1 className="mt-2 text-3xl font-black tracking-tight">Dashboard + CRUD</h1>
+              <p className="mt-2 text-sm text-zinc-300">Genera radios o playlists y administra tus mixTapes guardados.</p>
             </div>
 
             <div className="flex items-center gap-3 rounded-xl border border-zinc-700 bg-zinc-900 px-3 py-2">
@@ -356,13 +283,38 @@ function App() {
               </button>
             </div>
           </div>
+
+          <nav className="mt-5 flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => setActiveTab('generator')}
+              className={`rounded-lg px-3 py-2 text-sm font-semibold transition ${
+                activeTab === 'generator'
+                  ? 'bg-emerald-500 text-black'
+                  : 'border border-zinc-700 text-zinc-200 hover:border-zinc-500'
+              }`}
+            >
+              Crear mixTape
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('dashboard')}
+              className={`rounded-lg px-3 py-2 text-sm font-semibold transition ${
+                activeTab === 'dashboard'
+                  ? 'bg-emerald-500 text-black'
+                  : 'border border-zinc-700 text-zinc-200 hover:border-zinc-500'
+              }`}
+            >
+              Mi Dashboard
+            </button>
+          </nav>
         </header>
 
-        <SelectedArtists artists={selectedArtists} onRemove={handleRemoveArtist} />
-        <SearchBar value={query} onChange={handleQueryChange} isLoading={isSearching} />
-        <ArtistSelector results={searchResults} selectedIds={selectedIds} onSelect={handleSelectArtist} />
-        <GenerateButton disabled={selectedArtists.length < 2} isLoading={isGenerating} onClick={handleGenerate} />
-        <SuccessCard playlistUrl={playlist?.url} playlistName={playlist?.name} />
+        {activeTab === 'generator' ? (
+          <MixTapeGenerator accessToken={token} profile={profile} onRecordCreated={handleRecordCreated} />
+        ) : (
+          <Dashboard accessToken={token} refreshToken={dashboardRefreshToken} />
+        )}
       </div>
     </main>
   )
