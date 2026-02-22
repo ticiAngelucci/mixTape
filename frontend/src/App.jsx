@@ -7,7 +7,7 @@ import SelectedArtists from './components/SelectedArtists'
 import SuccessCard from './components/SuccessCard'
 
 const SPOTIFY_CLIENT_ID = import.meta.env.VITE_SPOTIFY_CLIENT_ID || ''
-const SPOTIFY_REDIRECT_URI = import.meta.env.VITE_SPOTIFY_REDIRECT_URI || 'http://127.0.0.1:5173/callback'
+const SPOTIFY_REDIRECT_URI = import.meta.env.VITE_SPOTIFY_REDIRECT_URI 
 const SPOTIFY_SCOPES = [
   'user-read-email',
   'playlist-modify-public',
